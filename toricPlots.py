@@ -1,6 +1,7 @@
 import json
 import pickle
 from collections import Counter, OrderedDict
+from copy import deepcopy
 from functools import partial
 
 import jax
@@ -10,13 +11,14 @@ import netket as nk
 import numpy as np
 import pandas as pd
 import ray
+from netket.experimental.models.fast_rnn import FastLSTMNet
 from netket.operator.spin import sigmax, sigmaz
 from optax import adamw
 from scipy.special import logsumexp
-from scipy.stats import entropy
+from tqdm import tqdm
 
-# from netket.experimental.models.fast_rnn import FastLSTMNet
-from models.lstm import FastLSTMNet
+from models.lstm import FastLSTMNet as modLSTMNet
+from models.vanilla import VanillaRNN
 from regularizedQSR import QSR as rQSR
 
 
@@ -99,24 +101,27 @@ def KL(sigmas, statePath, copy):
         sampler = nk.sampler.MetropolisLocal(hilbert=hilbert, n_chains_per_rank=16)
         model = nk.models.RBM(alpha=alpha, param_dtype=float)
 
-    elif ("RNN" in ansatz) or ("LSTM" in ansatz):
+    elif "anilla" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = VanillaRNN(layers=3, features=dh, hilbert=hilbert, graph=g)
+
+    elif "RNN" in ansatz:
         if "2D" in ansatz:
             g = nk.graph.Hypercube(length=L, n_dim=2, pbc=True)
         sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
         model = FastLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
+    elif "modLSTM" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = modLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
     elif ansatz == "Product":
         sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
         model = FastLSTMNet(layers=2, features=5, hilbert=hilbert, graph=g)
 
     state = nk.vqs.MCState(sampler, model=model, n_samples=256)
     path = statePath + f"_copy={copy}_L={L}"
-    try:
-        vars = nk.experimental.vqs.variables_from_file(
-            filename=path, variables=state.variables
-        )
-    except:
-        print(statePath)
-        return np.nan
+    vars = nk.experimental.vqs.variables_from_file(
+        filename=path, variables=state.variables
+    )
     state.variables = vars
     addition = 0
     if ansatz == "RBM":
@@ -126,6 +131,7 @@ def KL(sigmas, statePath, copy):
     logPTheta = 2 * state.log_value(sigmas)
     assert logPs.shape == logPTheta.shape
     kl = (1 / len(logPs)) * np.sum(logPs - logPTheta) + addition
+    print(logPTheta)
     return kl
 
 
@@ -136,12 +142,20 @@ def JS(sigmas, statePath, copy, p):
     if ansatz == "RBM":
         sampler = nk.sampler.MetropolisLocal(hilbert=hilbert, n_chains_per_rank=16)
         model = nk.models.RBM(alpha=alpha, param_dtype=float)
+    elif "anilla" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = VanillaRNN(layers=3, features=dh, hilbert=hilbert, graph=g)
 
-    elif ("RNN" in ansatz) or ("LSTM" in ansatz):
+    elif "RNN" in ansatz:
         if "2D" in ansatz:
             g = nk.graph.Hypercube(length=L, n_dim=2, pbc=True)
         sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
         model = FastLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
+
+    elif "modLSTM" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = modLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
+
     elif ansatz == "Product":
         sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
         model = FastLSTMNet(layers=2, features=5, hilbert=hilbert, graph=g)
@@ -169,27 +183,38 @@ def JS(sigmas, statePath, copy, p):
 klRemote = ray.remote(KL)
 
 
-def trainingMetric(measurements, statePath):
-    Ns = 1000
+def trainingMetric(measurements, statePath, copy):
+    Ns = 100000
     indices = np.random.randint(len(measurements), size=(Ns,))
     samples = measurements[indices]
 
     g = nk.graph.Hypercube(length=len(samples[0]), n_dim=1, pbc=True)
     hilbert = nk.hilbert.Spin(s=0.5, N=g.n_nodes)
-    if ("RNN" in ansatz) or ("LSTM" in ansatz):
-        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
-        model = FastLSTMNet(layers=3, features=10, hilbert=hilbert, graph=g)
-    elif ansatz == "RBM":
+
+    if ansatz == "RBM":
         sampler = nk.sampler.MetropolisLocal(hilbert=hilbert, n_chains_per_rank=16)
         model = nk.models.RBM(alpha=alpha, param_dtype=float)
+
+    elif "anilla" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = VanillaRNN(layers=3, features=dh, hilbert=hilbert, graph=g)
+
+    elif "RNN" in ansatz:
+        if "2D" in ansatz:
+            g = nk.graph.Hypercube(length=L, n_dim=2, pbc=True)
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = FastLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
+    elif "modLSTM" in ansatz:
+        sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
+        model = modLSTMNet(layers=3, features=dh, hilbert=hilbert, graph=g)
     elif ansatz == "Product":
         sampler = nk.sampler.ARDirectSampler(hilbert=hilbert)
-        model = FastLSTMNet(layers=3, features=10, hilbert=hilbert, graph=g)
+        model = FastLSTMNet(layers=2, features=5, hilbert=hilbert, graph=g)
 
     state = nk.vqs.MCState(sampler, model=model, n_samples=Ns)
-
+    path = statePath + f"_copy={copy}_L={L}"
     vars = nk.experimental.vqs.variables_from_file(
-        filename=statePath, variables=state.variables
+        filename=path, variables=state.variables
     )
     state.variables = vars
 
@@ -231,26 +256,26 @@ def trainingMetric(measurements, statePath):
     # #############
 
     ############## Stiffness
-    res = []
-    for reference in range(10):
-        path = statePath + f"_copy={reference}_L={L}"
-        for i in range(50):
-            vars = nk.experimental.vqs.variables_from_file(
-                filename=path, variables=state.variables
-            )
-            state.variables = vars
-            # samples = state.sample()
-            samples = np.random.choice([-1, 1], size=(Ns, hilbert.size))
-            if samples.ndim == 3:
-                samples = samples[0]
-            logPs1 = state.log_value(samples)
-
-            state.variables = jax.tree.map(
-                lambda x: x + np.random.normal(0, 0.005), vars
-            )
-            logPs2 = state.log_value(samples)
-            res.append(jnp.mean((logPs2 - logPs1) ** 2))
-        return jnp.mean(jnp.array(res))
+    # res = []
+    # for reference in range(10):
+    #     path = statePath + f"_copy={reference}_L={L}"
+    #     for i in range(50):
+    #         vars = nk.experimental.vqs.variables_from_file(
+    #             filename=path, variables=state.variables
+    #         )
+    #         state.variables = vars
+    #         # samples = state.sample()
+    #         samples = np.random.choice([-1, 1], size=(Ns, hilbert.size))
+    #         if samples.ndim == 3:
+    #             samples = samples[0]
+    #         logPs1 = state.log_value(samples)
+    #
+    #         state.variables = jax.tree.map(
+    #             lambda x: x + np.random.normal(0, 0.005), vars
+    #         )
+    #         logPs2 = state.log_value(samples)
+    #         res.append(jnp.mean((logPs2 - logPs1) ** 2))
+    #     return jnp.mean(jnp.array(res))
     ##############
 
     ############## KL after moves
@@ -277,18 +302,10 @@ def trainingMetric(measurements, statePath):
     ##############
 
     ############## Parity
-    # k = int(0.9 * hilbert.size)
-    # n = 100
-    # samples = state.sample()[0]
-    # out = []
-    # for i in range(n):
-    #     indices = np.random.choice(hilbert.size, k, replace=False)
-    #     truth = jnp.mean((jnp.prod(measurements[:, indices], axis=1)), axis=0)
-    #     trained = jnp.mean((jnp.prod(samples[:, indices], axis=1)), axis=0)
-    #     print(truth, trained)
-    #     out.append(np.abs(truth - trained))
-    # # out = jnp.prod(samples, axis=-1)
-    # return np.mean(out)
+
+    samples = state.sample()
+    out = jnp.prod(samples, axis=-1)
+    return np.mean(out)
     ##############
 
     ############## KL between copies
@@ -336,7 +353,7 @@ def trainingMetric(measurements, statePath):
     #         logM = logsumexp([logPs, logPsReference], axis=0) - np.log(2)
     #         Mat[reference][copy] = np.mean(logPsReference - logM)
     # return np.mean(Mat[Mat != 0])
-    ##############
+    ############## Dist from uniform
     # path = statePath
     # vars = nk.experimental.vqs.variables_from_file(
     #     filename=path, variables=state.variables
@@ -345,46 +362,82 @@ def trainingMetric(measurements, statePath):
     # samples = state.sample()[0]
     # logPs = 2 * state.log_value(samples)
     # return jnp.mean(logPs) + hilbert.size * np.log(2)
+    ##############
+
+    ##############  'Useful' gradient
+    # state = nk.vqs.MCState(sampler, model=model, n_samples=Ns)
+    # uniformSamples = np.random.choice([-1, 1], size=(Ns, hilbert.size))
+    #
+    # # refSamples = deepcopy(samples)
+    # # refSamples[:, -1] = uniformSamples[:, -1]
+    # refSamples = uniformSamples
+    #
+    # trueGrads = nk.jax.jacobian(
+    #     state.model.apply, state.parameters, samples, mode="real"
+    # )
+    # junkGrads = nk.jax.jacobian(
+    #     state.model.apply, state.parameters, refSamples, mode="real"
+    # )
+    # absDiff = jax.tree.map(lambda x, y: jnp.abs(x - y), trueGrads, junkGrads)
+    #
+    # absDiffFlat, _ = jax.flatten_util.ravel_pytree(absDiff)
+    # return jnp.mean(absDiffFlat)
+    ##############
 
 
 if __name__ == "__main__":
     colors = ["red", "blue", "green", "orange", "yellow"]
     markers = ["o", "s", "^", "d", "*"]
-    L = 25
+    HType = "XXpZ"
     d = 1
     dh = 10
     it = 0
-    for ansatz in ["RNNVanilla"]:
-        pDict = {
-            "Toric": np.arange(0.00, 0.2, 0.01),
-            "GHZ": np.arange(0.05, 1, 0.05),
-            "ToricCoherent": np.arange(0, 26),
-            "ToricCoherentSQ": np.arange(0, 26),
-        }
-        for HType in ["GHZ"]:
+    for L in [32]:
+        for ansatz in [
+            # "RNN"
+            "modLSTM",
+            # "modLSTM_double",
+            # "modLSTM_triple",
+            # "modLSTM_oct",
+        ]:
+            pDict = {
+                "Toric": np.arange(0.00, 0.2, 0.01),
+                "ToricPBC": np.arange(0.00, 0.2, 0.01),
+                "IsingX": np.arange(0.05, 2, 0.05),
+                "XXpZ": np.arange(0.05, 2, 0.05),
+                "IsingZ": np.arange(0.05, 2, 0.05),
+                "GHZ": np.arange(0.0, 1.0, 0.05),
+                "ToricCoherent": np.arange(0, 26),
+                "ToricCoherentSQ": np.arange(0, 26),
+            }
             ps = pDict[HType]
-            for p in ps:
+            for p in tqdm(ps):
                 pname = f"{int(p)}" if "ToricCoherent" in HType else f"{p:.3f}"
-                alpha = 1.5
+                # letter = "h" if "Ising" in HType else "p"
+                letter = "h"
+                delim = "\t"
+                # delim = "\t" if "Ising" in HType else " "
                 if "ToricCoherent" not in HType:
                     measurements = pd.read_csv(
-                        f"traindata/{HType.lower()}/d={d}/measurements_L={L}_p={pname}.csv",
-                        delimiter=" ",
+                        f"traindata/{HType.lower()}/d={d}/measurements_L={L}_{letter}={pname}.csv",
+                        delimiter=delim,
                         header=None,
                     )
                     measurements = measurements.dropna(axis=1, how="all")
                     measurements = measurements.to_numpy()
+                    print((np.prod(measurements, axis=-1)))
                     if HType == "GHZ":
                         logPs = np.log(prob(measurements, L, p) + 1e-20)
-                    elif HType == "Toric":
+                    else:
                         ps = pd.read_csv(
-                            f"traindata/{HType.lower()}/d={d}/ps_L={L}_p={pname}.csv",
-                            delimiter=" ",
+                            f"traindata/{HType.lower()}/d={d}/ps_L={L}_{letter}={pname}.csv",
+                            delimiter=delim,
                             header=None,
                         )
-                        ps = ps.dropna(axis=1, how="all")
+                        # ps = ps.dropna(axis=1, how="all")
                         ps = ps.to_numpy()
                         logPs = np.log(ps)[:, 0]
+                        print(logPs.shape)
 
                 else:
                     tempFunc = lambda x, y: (
@@ -406,34 +459,17 @@ if __name__ == "__main__":
                     measurements = np.array(measurements)
                     logPs = np.log(2) * np.array(logPs)[:, 0, 0]
 
-                # metric = trainingMetric(
-                #     measurements, f"logs/{HType.lower()}/d={d}/{ansatz}_param={pname}"
-                # )
-                print(f"logs/{HType.lower()}/d={d}/{ansatz}_param={pname}")
-                # KL(
-                #     measurements,
-                #     f"logs/{HType.lower()}/d={d}/{ansatz}_param={pname}",
-                #     copy,
-                # )
-                # pIds = [
-                #     klRemote.remote(
-                #         measurements,
-                #         f"logs/{HType.lower()}/d={d}/{ansatz}_param={pname}",
-                #         copy,
-                #     )
-                #     for copy in range(10)
-                # ]
-                # kls = ray.get(pIds)
-                kls = []
+                cont = []
+                func = KL
                 for copy in range(5, 10):
                     # dh = 6 + 2 * copy
-                    kl = JS(
+                    metric = func(
                         measurements,
                         f"logs/{HType.lower()}/d={d}/{ansatz}_param={pname}",
                         copy,
-                        p,
+                        # p,
                     )
-                    kls.append(kl)
+                    cont.append(metric)
                     # plt.scatter(
                     #     p,
                     #     kl,
@@ -443,7 +479,7 @@ if __name__ == "__main__":
                     #     edgecolor="black",
                     # )
                     #
-                metric, err = np.mean(kls), np.sqrt(np.var(kls))
+                metric, err = np.min(cont), np.sqrt(np.var(cont))
                 eta = (np.pi * p) / 100
                 x = p if "ToricCoherent" not in HType else eta
                 plt.scatter(
@@ -453,17 +489,21 @@ if __name__ == "__main__":
                     # yerr=err,
                     color=colors[it],
                     edgecolor="black",
-                    label=ansatz,
+                    label=f"L={L}",
                     # capsize=5,
                 )
-        it += 1
+            it += 1
     plt.ylabel(r"$D_{KL}(p_{true}| p_{rnn})$")
-    plt.xlabel(r"$p_{err}$")
+    # plt.ylabel(r"$\left| \nabla L_{true} - \nabla L_{ref}\right|$")
+    # plt.ylabel(r"$1-\expval{\prod_i^N \sigma_i}$")
+    # plt.xlabel(r"$p_{err}$")
+    plt.xlabel(r"$h$")
     # plt.xlabel(r"$\eta$")
 
-    plt.title(f"L={L} D={d}")
+    plt.title(HType)
+    # plt.yscale("log")
     plt.tight_layout()
     handles, labels = plt.gca().get_legend_handles_labels()
     by_label = OrderedDict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys())
+    plt.legend(by_label.values(), by_label.keys(), fontsize="small")
     plt.show()

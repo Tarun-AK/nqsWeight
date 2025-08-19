@@ -122,18 +122,20 @@ for ansatz in ["RNN"]:
         for HType in ["XX+Z"]:
             if h == 4.0 and HType == "ZZ+X":
                 continue
-            data = json.load(open(f"logs/{HType}_{ansatz}_h={h}.log", "r"))
-            iters = data["Energy"]["iters"]
+            # data = json.load(open(f"logs/{HType}_{ansatz}_h={h}.log", "r"))
+            # iters = data["Energy"]["iters"]
             sigmas = pd.read_csv(
-                f"traindata/ising/isingTrainingSet_{HType}_h={h}.csv",
+                f"traindata/isingz/old/isingTrainingSet_{HType}_h={h}.csv",
                 delimiter="\t",
                 header=None,
             ).to_numpy()
             ps = pd.read_csv(
-                f"traindata/ising/ps_{HType}_h={h}.csv", delimiter="\t", header=None
+                f"traindata/isingz/old/ps_{HType}_h={h}.csv",
+                delimiter="\t",
+                header=None,
             ).to_numpy()
             logPs = np.log(ps)
-
+            print(np.prod(sigmas, axis=-1))
             # metric = np.array(data["Energy"]["Mean"])
             # plt.plot(
             #     iters,
@@ -147,20 +149,20 @@ for ansatz in ["RNN"]:
             #     edgecolor="black",
             #     # color="red" if HType == "XX+Z" else "blue",
             # )
-            metric = KL(sigmas, f"logs/{HType}_RNN_h={h}.mpack", 50000)
-            # metric = energy(HType, f"logs/{HType}_{ansatz}_h={h}.mpack", 5000)
-            # metric = gradVariance(sigmas, f"logs/{HType}_{ansatz}_h={h}.mpack")
-            print(h, metric)
-            plt.scatter(
-                h,
-                metric,
-                edgecolor="black",
-                color="red" if ansatz == "RNN" else "blue",
-                # color="red" if HType == "XX+Z" else "blue",
-                label=HType,
-            )
-
-            it += 1
+            # metric = KL(sigmas, f"logs/{HType}_RNN_h={h}.mpack", 50000)
+            # # metric = energy(HType, f"logs/{HType}_{ansatz}_h={h}.mpack", 5000)
+            # # metric = gradVariance(sigmas, f"logs/{HType}_{ansatz}_h={h}.mpack")
+            # print(h, metric)
+            # plt.scatter(
+            #     h,
+            #     metric,
+            #     edgecolor="black",
+            #     color="red" if ansatz == "RNN" else "blue",
+            #     # color="red" if HType == "XX+Z" else "blue",
+            #     label=HType,
+            # )
+            #
+            # it += 1
 # plt.plot(
 #     data["KL"]["iters"],
 #     -40.76 * np.ones(len(metric)),

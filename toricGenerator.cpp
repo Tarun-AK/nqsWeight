@@ -112,8 +112,7 @@ void applyError(
             std::cout << "WHAT?" << std::endl;
         }
 
-        // Hard code error case
-        errorType = 0;
+        errorType = 1;
 
         // Calculate the second vertex connected to the bond
         std::vector<int> secondVertex = vindex;
@@ -163,6 +162,7 @@ void applyError(
         case 3:
             bonds[std::make_tuple(vindex, bond)] *= -1;
             bonds[std::make_tuple(secondVertex, bond)] *= -1;
+            break;
         }
     }
 }
@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
     for (int pi = 0; pi < 20; pi++) {
         double p = pi * 0.01;
         std::ostringstream filename;
-        filename << "traindata/toric/d=" << D << "/measurements_L=" << Lsmall
+        filename << "traindata/toricpbc/d=" << D << "/measurements_L=" << Lsmall
                  << "_p=" << roundDouble(p, 3) << ".csv";
         std::ofstream fileObj(filename.str(), std::ios::out | std::ios::trunc);
 
@@ -213,13 +213,11 @@ int main(int argc, char *argv[]) {
 
                         std::tuple<std::vector<int>, int, int> indexer(vertex,
                                                                        0, 1);
-                        line << plaquettes[indexer] << " ";
+                        // line << plaquettes[indexer] << " ";
+                        line << vertices[vertex] << " ";
                     }
                 }
-                // // Write vertices to the line
-                // for (const auto &vertex : vertices) {
-                //     line << vertex.second << " ";
-                // }
+
             } else {
                 for (const auto &bond : bonds) {
                     line << bond.second << " ";

@@ -41,10 +41,10 @@ function Ising_GS(N,max_bd, h)
 
     os = OpSum()
     for j in 1:N
-        os += -4.0,"Sz",j,"Sz",j%N+1
+        os += -2.0,"Sx",j,"Sx",j%N+1
     end
     for j in 1:N
-        os += -h,"Sx",j
+        os += -h,"Sz",j
     end
     H = MPO(os,sites)
 
@@ -84,11 +84,12 @@ function MPS_to_array(psi::MPS)
     return As
 end
 
-for h in [0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+for h in 0.05:0.05:2 
     psi = Ising_GS(32,100, h)
     M = myMPS(MPS_to_array(psi));
 
     sigma_pauli = diagm([1.0,-1.0]) # Z basis
+    # sigma_pauli = [0.0 1.0; 1.0 0.0] # X basis
     Ps = [(I-sigma_pauli)./2, (I+sigma_pauli)./2]
     out_strings = [] ## output strings of outcomes
     out_probs = [] ##each output probability
@@ -96,12 +97,16 @@ for h in [0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
 
     @time for _ in 1:n_samp
         m_out,p_out = MIE_sample(M, Ps)
+
+        # SHOULD OUTPUT ONLY EVEN NUMBERS
+        println(count(==(1), m_out))
+
+
         push!(out_strings,(2*m_out .- 3))
         push!(out_probs,p_out)
     end
-
     using DelimitedFiles
 
-    writedlm("traindata/isingTrainingSet_ZZ+X_h=$h.csv", out_strings)
-    writedlm("traindata/ps_ZZ+X_h=$h.csv", out_probs)
+    writedlm("traindata/xxpz/d=1/measurements_L=32_h=$h.csv", out_strings)
+    writedlm("traindata/xxpz/d=1/ps_L=32_h=$h.csv", out_probs)
 end

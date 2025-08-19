@@ -98,9 +98,8 @@ for h in 0.05:0.05:2
     @time for _ in 1:n_samp
         m_out,p_out = MIE_sample(M, Ps)
 
-        # SHOULD OUTPUT ONLY EVEN NUMBERS
-        println(count(==(1), m_out))
-
+        # SHOULD OUTPUT ONLY ONES
+        println(prod(2*m_out .- 3))
 
         push!(out_strings,(2*m_out .- 3))
         push!(out_probs,p_out)

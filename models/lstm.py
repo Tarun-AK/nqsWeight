@@ -1,3 +1,5 @@
+import flax.linen as nn
+import netket as nk
 from flax import linen as nn
 from flax.linen.dtypes import promote_dtype
 from jax import numpy as jnp
@@ -9,7 +11,7 @@ from netket.experimental.nn.rnn import (
     RNNCell,
     default_kernel_init,
 )
-from netket.models.autoreg import _get_feature_list
+from netket.models.autoreg import ARNNSequential, _get_feature_list, _normalize
 from netket.utils.types import NNInitFunc
 
 
@@ -64,7 +66,7 @@ class FastLSTMNet(FastRNN):
         layers.append(
             FastRNNLayer(
                 cell=DenseCell(
-                    features=2,
+                    features=self.hilbert.local_size,
                     param_dtype=self.param_dtype,
                     kernel_init=self.kernel_init,
                     bias_init=self.bias_init,
@@ -77,3 +79,22 @@ class FastLSTMNet(FastRNN):
             )
         )
         self._layers = tuple(layers)
+
+
+# class LSTMNet2D(nk.experimental.models.FastLSTMNet):
+#     @nn.compact
+#     def conditionals_log_psi(self, inputs):
+#         inputs = self.reshape_inputs(inputs)
+#
+#         x = jnp.expand_dims(inputs, axis=-1)
+#
+#         for i in range(len(self._layers)):
+#             if i > 0 and hasattr(self, "activation"):
+#                 x = self.activation(x)
+#             x = self._layers[i](x)
+#
+#         x = nn.Dense(self.)(x)
+#
+#         x = x.reshape((x.shape[0], -1, x.shape[-1]))
+#         log_psi = _normalize(x, self.machine_pow)
+#         return log_psi
